@@ -8,6 +8,7 @@ import threading
 import traceback
 import tempfile
 import webbrowser
+import re
 from typing import Optional, Tuple
 
 import customtkinter as ctk
@@ -43,7 +44,7 @@ def _ensure_playwright_browsers() -> None:
             pass
 
 
-def convert_html_to_pdf_sync(html_content: str, output_pdf_path: str) -> None:
+def convert_html_to_pdf_sync(html_content: str, output_pdf_path: str, continuous: bool = False) -> None:
     """Render HTML to PDF using Playwright (Chromium) synchronously.
 
     Args:
@@ -62,11 +63,36 @@ def convert_html_to_pdf_sync(html_content: str, output_pdf_path: str) -> None:
         page.emulate_media(media="screen")
         page.set_content(html_content, wait_until="networkidle")
 
-        pdf_bytes = page.pdf(
-            format="A4",
-            print_background=True,
-            prefer_css_page_size=True,
-        )
+        if continuous:
+            # Measure full content size and generate a single tall page
+            # Use CSS pixels; Chromium treats 1px = 1/96 inch
+            size = page.evaluate(
+                """
+(() => {
+  const el = document.documentElement;
+  const body = document.body;
+  const width = Math.max(el.scrollWidth, el.offsetWidth, body?.scrollWidth||0, body?.offsetWidth||0);
+  const height = Math.max(el.scrollHeight, el.offsetHeight, body?.scrollHeight||0, body?.offsetHeight||0);
+  return { width, height };
+})()
+                """
+            )
+            width_px = max(1, int(size["width"]))
+            height_px = max(1, int(size["height"]))
+
+            pdf_bytes = page.pdf(
+                width=f"{width_px}px",
+                height=f"{height_px}px",
+                print_background=True,
+                margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
+                prefer_css_page_size=False,
+            )
+        else:
+            pdf_bytes = page.pdf(
+                format="A4",
+                print_background=True,
+                prefer_css_page_size=True,
+            )
 
         with open(output_pdf_path, "wb") as f:
             f.write(pdf_bytes)
@@ -101,19 +127,38 @@ class HtmlToPdfApp(ctk.CTk):
         bottom.grid_columnconfigure(0, weight=1)
         bottom.grid_columnconfigure(1, weight=0)
         bottom.grid_columnconfigure(2, weight=0)
+        bottom.grid_columnconfigure(3, weight=0)
+        bottom.grid_columnconfigure(4, weight=0)
+        bottom.grid_columnconfigure(5, weight=0)
 
         # Status label
         self.status_var = ctk.StringVar(value="Ready")
         self.status_label = ctk.CTkLabel(bottom, textvariable=self.status_var, anchor="w")
         self.status_label.grid(row=0, column=0, padx=(12, 12), pady=12, sticky="w")
 
+        # File actions
+        self.open_btn = ctk.CTkButton(bottom, text="Open HTML", command=self.on_open_click)
+        self.open_btn.grid(row=0, column=1, padx=12, pady=12, sticky="e")
+
+        self.save_btn = ctk.CTkButton(bottom, text="Save HTML", command=self.on_save_click)
+        self.save_btn.grid(row=0, column=2, padx=12, pady=12, sticky="e")
+
+        # Paging mode toggle
+        self.paging_var = ctk.StringVar(value="Pages")
+        self.paging_toggle = ctk.CTkSegmentedButton(
+            bottom,
+            values=["Pages", "Continuous"],
+            variable=self.paging_var,
+        )
+        self.paging_toggle.grid(row=0, column=3, padx=12, pady=12, sticky="e")
+
         # Preview button
         self.preview_btn = ctk.CTkButton(bottom, text="Preview HTML", command=self.on_preview_click)
-        self.preview_btn.grid(row=0, column=1, padx=12, pady=12, sticky="e")
+        self.preview_btn.grid(row=0, column=4, padx=12, pady=12, sticky="e")
 
         # Convert button
         self.convert_btn = ctk.CTkButton(bottom, text="Convert to PDF", command=self.on_convert_click)
-        self.convert_btn.grid(row=0, column=2, padx=12, pady=12, sticky="e")
+        self.convert_btn.grid(row=0, column=5, padx=12, pady=12, sticky="e")
 
         # Example placeholder
         self._insert_example_placeholder()
@@ -122,10 +167,19 @@ class HtmlToPdfApp(ctk.CTk):
         self._latest_html: str = self.html_text.get("1.0", "end-1c")
         self._preview_server: Optional[Tuple[socketserver.TCPServer, int, threading.Thread]] = None
         self._debounce_job: Optional[str] = None
+        self._highlight_job: Optional[str] = None
+        self._current_file: Optional[str] = None
 
         # Debounced change binding for live preview
         self.html_text.bind("<<Modified>>", self._on_text_modified)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Configure syntax highlight tags
+        self._configure_highlight_tags()
+        # Load last session if any
+        self._load_last_session()
+        # Initial highlight
+        self._schedule_highlight()
 
     def _insert_example_placeholder(self) -> None:
         placeholder = (
@@ -143,6 +197,78 @@ class HtmlToPdfApp(ctk.CTk):
             "</body>\n</html>\n"
         )
         self.html_text.insert("1.0", placeholder)
+
+    def _session_path(self) -> str:
+        base = os.path.expanduser("~/Library/Application Support/HTML-to-PDF Converter")
+        os.makedirs(base, exist_ok=True)
+        return os.path.join(base, "last_session.html")
+
+    def _load_last_session(self) -> None:
+        try:
+            path = self._session_path()
+            if os.path.isfile(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = f.read()
+                if data.strip():
+                    self.html_text.delete("1.0", "end")
+                    self.html_text.insert("1.0", data)
+                    self._latest_html = data
+                    self.status_var.set("Restored last session")
+        except Exception:
+            pass
+
+    def _autosave_session(self) -> None:
+        try:
+            with open(self._session_path(), "w", encoding="utf-8") as f:
+                f.write(self._latest_html)
+        except Exception:
+            pass
+
+    def _configure_highlight_tags(self) -> None:
+        # Colors tuned for both light/dark backgrounds
+        self.html_text.tag_config("html-comment", foreground="#6b7280")
+        self.html_text.tag_config("html-tag", foreground="#2563eb")
+        self.html_text.tag_config("html-attr", foreground="#d97706")
+        self.html_text.tag_config("html-string", foreground="#16a34a")
+
+    def _schedule_highlight(self) -> None:
+        if self._highlight_job is not None:
+            try:
+                self.after_cancel(self._highlight_job)
+            except Exception:
+                pass
+        self._highlight_job = self.after(150, self._apply_syntax_highlighting)
+
+    def _apply_syntax_highlighting(self) -> None:
+        text_widget = self.html_text
+        content = text_widget.get("1.0", "end-1c")
+
+        # Clear previous tags
+        for tag in ("html-comment", "html-tag", "html-attr", "html-string"):
+            text_widget.tag_remove(tag, "1.0", "end")
+
+        # Helper to convert absolute offset to Tk index
+        def to_index(offset: int) -> str:
+            # Compute line/column by counting newlines
+            upto = content[:offset]
+            line = upto.count("\n") + 1
+            col = len(upto) - (upto.rfind("\n") + 1 if "\n" in upto else 0)
+            return f"{line}.{col}"
+
+        # Comments
+        for m in re.finditer(r"<!--[\s\S]*?-->", content):
+            text_widget.tag_add("html-comment", to_index(m.start()), to_index(m.end()))
+
+        # Strings inside tags
+        for m in re.finditer(r"(['\"]).*?\1", content, flags=re.DOTALL):
+            text_widget.tag_add("html-string", to_index(m.start()), to_index(m.end()))
+
+        # Tag names and attribute names within <...>
+        for m in re.finditer(r"<\s*\/??\s*([a-zA-Z][a-zA-Z0-9:-]*)", content):
+            text_widget.tag_add("html-tag", to_index(m.start(1)), to_index(m.end(1)))
+
+        for m in re.finditer(r"\s([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=", content):
+            text_widget.tag_add("html-attr", to_index(m.start(1)), to_index(m.end(1)))
 
     def on_convert_click(self) -> None:
         html = self.html_text.get("1.0", "end-1c").strip()
@@ -167,7 +293,8 @@ class HtmlToPdfApp(ctk.CTk):
         def worker() -> None:
             error_msg: Optional[str] = None
             try:
-                convert_html_to_pdf_sync(html, output_path)
+                continuous = self.paging_var.get() == "Continuous"
+                convert_html_to_pdf_sync(html, output_path, continuous=continuous)
             except Exception:
                 error_msg = traceback.format_exc()
 
@@ -213,10 +340,12 @@ class HtmlToPdfApp(ctk.CTk):
             except Exception:
                 pass
         self._debounce_job = self.after(300, self._update_latest_html_from_editor)
+        self._schedule_highlight()
 
     def _update_latest_html_from_editor(self) -> None:
         self._latest_html = self.html_text.get("1.0", "end-1c")
         # No UI update necessary; browser polls the server
+        self._autosave_session()
 
     def _start_preview_server(self) -> Tuple[socketserver.TCPServer, int, threading.Thread]:
         app_ref = self
@@ -284,7 +413,62 @@ class HtmlToPdfApp(ctk.CTk):
             except Exception:
                 pass
             self._preview_server = None
+        # Final autosave
+        try:
+            self._latest_html = self.html_text.get("1.0", "end-1c")
+            self._autosave_session()
+        except Exception:
+            pass
         self.destroy()
+
+    # ---------- File operations ----------
+    def on_open_click(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Open HTML File",
+            filetypes=[("HTML Files", "*.html *.htm"), ("All Files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = f.read()
+            self.html_text.delete("1.0", "end")
+            self.html_text.insert("1.0", data)
+            self._latest_html = data
+            self._current_file = path
+            self.status_var.set(f"Opened: {os.path.basename(path)}")
+            self._schedule_highlight()
+        except Exception as exc:
+            messagebox.showerror("Error", f"Could not open file:\n\n{exc}")
+
+    def on_save_click(self) -> None:
+        if self._current_file is None:
+            return self.on_save_as_click()
+        try:
+            data = self.html_text.get("1.0", "end-1c")
+            with open(self._current_file, "w", encoding="utf-8") as f:
+                f.write(data)
+            self.status_var.set(f"Saved: {os.path.basename(self._current_file)}")
+        except Exception as exc:
+            messagebox.showerror("Error", f"Could not save file:\n\n{exc}")
+
+    def on_save_as_click(self) -> None:
+        path = filedialog.asksaveasfilename(
+            title="Save HTML As...",
+            defaultextension=".html",
+            filetypes=[("HTML Files", "*.html"), ("All Files", "*.*")],
+            initialfile="document.html",
+        )
+        if not path:
+            return
+        try:
+            data = self.html_text.get("1.0", "end-1c")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(data)
+            self._current_file = path
+            self.status_var.set(f"Saved: {os.path.basename(path)}")
+        except Exception as exc:
+            messagebox.showerror("Error", f"Could not save file:\n\n{exc}")
 
 
 def main() -> None:
