@@ -1,11 +1,14 @@
 import os
 import sys
+import http.server
+import socketserver
+import socket
 import subprocess
 import threading
 import traceback
 import tempfile
 import webbrowser
-from typing import Optional
+from typing import Optional, Tuple
 
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
@@ -115,6 +118,15 @@ class HtmlToPdfApp(ctk.CTk):
         # Example placeholder
         self._insert_example_placeholder()
 
+        # Live preview state
+        self._latest_html: str = self.html_text.get("1.0", "end-1c")
+        self._preview_server: Optional[Tuple[socketserver.TCPServer, int, threading.Thread]] = None
+        self._debounce_job: Optional[str] = None
+
+        # Debounced change binding for live preview
+        self.html_text.bind("<<Modified>>", self._on_text_modified)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
     def _insert_example_placeholder(self) -> None:
         placeholder = (
             "<!doctype html>\n"
@@ -176,15 +188,103 @@ class HtmlToPdfApp(ctk.CTk):
         if not html:
             messagebox.showinfo("No HTML", "Please paste HTML content to preview.")
             return
+        # Start live preview server (once) and open browser
         try:
-            with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False) as tmp:
-                tmp.write(html)
-                tmp_path = tmp.name
-            webbrowser.open(f"file://{tmp_path}")
-            self.status_var.set("Opened preview in default browser")
+            if self._preview_server is None:
+                self._preview_server = self._start_preview_server()
+            _, port, _ = self._preview_server
+            webbrowser.open(f"http://127.0.0.1:{port}/")
+            self.status_var.set("Opened live preview in browser (auto-refresh)")
         except Exception as exc:
             self.status_var.set("Failed to open preview")
             messagebox.showerror("Error", f"Could not open preview:\n\n{exc}")
+
+    def _on_text_modified(self, _event=None) -> None:
+        # Reset modified flag immediately
+        try:
+            self.html_text.edit_modified(False)
+        except Exception:
+            pass
+
+        # Debounce updates to reduce churn
+        if self._debounce_job is not None:
+            try:
+                self.after_cancel(self._debounce_job)
+            except Exception:
+                pass
+        self._debounce_job = self.after(300, self._update_latest_html_from_editor)
+
+    def _update_latest_html_from_editor(self) -> None:
+        self._latest_html = self.html_text.get("1.0", "end-1c")
+        # No UI update necessary; browser polls the server
+
+    def _start_preview_server(self) -> Tuple[socketserver.TCPServer, int, threading.Thread]:
+        app_ref = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, format: str, *args) -> None:  # silence
+                return
+
+            def do_GET(self):  # type: ignore[override]
+                path = self.path.split("?")[0]
+                if path == "/" or path == "/index.html":
+                    content = (
+                        "<!doctype html>\n"
+                        "<html><head><meta charset=\"utf-8\">"
+                        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+                        "<title>Live Preview</title>"
+                        "<style>html,body{height:100%;margin:0}body{background:#0b0b0b}"
+                        "#wrap{position:fixed;inset:12px;background:#fff;border-radius:8px;overflow:hidden}"
+                        "#bar{position:absolute;top:0;left:0;right:0;height:36px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#f5f5f5;border-bottom:1px solid #e5e5e5;font-family:ui-sans-serif,system-ui,sans-serif}"
+                        "#frame{position:absolute;top:36px;left:0;right:0;bottom:0;border:0;width:100%;height:calc(100% - 36px)}"
+                        "button{appearance:none;border:1px solid #d0d0d0;border-radius:6px;background:#fff;padding:6px 10px;cursor:pointer}"
+                        "</style></head><body>"
+                        "<div id=wrap>"
+                        "  <div id=bar>Live Preview <button id=refresh>Refresh</button><span id=info style=\"margin-left:auto;color:#666\"></span></div>"
+                        "  <iframe id=frame src=/content></iframe>"
+                        "</div>"
+                        "<script>"
+                        "const frame=document.getElementById('frame');"
+                        "const info=document.getElementById('info');"
+                        "document.getElementById('refresh').onclick=()=>reload();"
+                        "function reload(){frame.src='/content?t='+Date.now();info.textContent=new Date().toLocaleTimeString();}"
+                        "</script>"
+                        "</body></html>\n"
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(content)))
+                    self.end_headers()
+                    self.wfile.write(content)
+                elif path == "/content":
+                    data = app_ref._latest_html.encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                else:
+                    self.send_error(404)
+
+        # Bind to a free port on localhost
+        httpd = socketserver.TCPServer(("127.0.0.1", 0), Handler)
+        port = httpd.server_address[1]
+        server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        server_thread.start()
+        return httpd, port, server_thread
+
+    def _on_close(self) -> None:
+        # Stop preview server if running
+        if self._preview_server is not None:
+            try:
+                httpd, _, _ = self._preview_server
+                httpd.shutdown()
+                httpd.server_close()
+            except Exception:
+                pass
+            self._preview_server = None
+        self.destroy()
 
 
 def main() -> None:
