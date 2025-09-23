@@ -1,3 +1,21 @@
+.DS_Store
+.venv/
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.tmp
+*.swp
+/.idea/
+/.vscode/
+*.egg-info/
+node_modules/
+playwright/.cache/
+ms-playwright/
 # macOS
 .DS_Store
 .AppleDouble

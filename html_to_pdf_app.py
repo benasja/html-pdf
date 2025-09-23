@@ -101,6 +101,125 @@ def convert_html_to_pdf_sync(html_content: str, output_pdf_path: str, continuous
         browser.close()
 
 
+def convert_html_to_png_sync(html_content: str, output_png_path: str) -> None:
+    """Render HTML to a full-page PNG using Playwright (Chromium)."""
+    from playwright.sync_api import sync_playwright
+
+    _ensure_playwright_browsers()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+
+        page.emulate_media(media="screen")
+        page.set_content(html_content, wait_until="networkidle")
+
+        png_bytes = page.screenshot(full_page=True, type="png")
+
+        with open(output_png_path, "wb") as f:
+            f.write(png_bytes)
+
+        context.close()
+        browser.close()
+
+
+def convert_html_to_docx_sync(html_content: str, output_docx_path: str) -> None:
+    """Convert HTML to DOCX by rasterizing to PNG and embedding it."""
+    import tempfile
+    from docx import Document
+    from docx.shared import Inches
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        png_path = os.path.join(tmpdir, "page.png")
+        convert_html_to_png_sync(html_content, png_path)
+
+        doc = Document()
+        # Fit image to typical page width; python-docx will keep aspect ratio
+        doc.add_picture(png_path, width=Inches(6.5))
+        doc.save(output_docx_path)
+
+
+def convert_html_to_pptx_sync(html_content: str, output_pptx_path: str) -> None:
+    """Convert HTML to PPTX creating one slide per .slide section if present.
+
+    Fallback: if no .slide sections found, capture full page as a single slide.
+    """
+    import tempfile
+    from pptx import Presentation
+    from playwright.sync_api import sync_playwright
+
+    _ensure_playwright_browsers()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        screenshots: list[str] = []
+        first_slide_ratio: Optional[float] = None
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            # Use a 16:9 viewport; element screenshots ignore viewport size for clipping,
+            # but 100vh/100vw-based layouts will be consistent
+            context = browser.new_context(viewport={"width": 1920, "height": 1080})
+            page = context.new_page()
+
+            page.emulate_media(media="screen")
+            page.set_content(html_content, wait_until="networkidle")
+
+            # Prefer <section class="slide">, else any .slide
+            locator = page.locator("section.slide, .slide")
+            count = locator.count()
+
+            if count == 0:
+                # Fallback: single screenshot of the full page
+                png_path = os.path.join(tmpdir, "slide-1.png")
+                page.screenshot(path=png_path, full_page=True, type="png")
+                screenshots.append(png_path)
+            else:
+                for i in range(count):
+                    # Element screenshots auto-scroll into view
+                    el = locator.nth(i)
+                    # Record aspect ratio (h/w) from first slide for PPTX slide sizing
+                    if i == 0:
+                        box = el.bounding_box()
+                        if box and box.get("width") and box.get("height"):
+                            first_slide_ratio = max(0.01, float(box["height"]) / float(box["width"]))
+                    png_path = os.path.join(tmpdir, f"slide-{i+1}.png")
+                    el.screenshot(path=png_path, type="png")
+                    screenshots.append(png_path)
+
+            context.close()
+            browser.close()
+
+        prs = Presentation()
+        # If we detected a slide aspect ratio, size the PPTX accordingly to avoid
+        # top/bottom whitespace when fitting images.
+        if first_slide_ratio is not None:
+            from pptx.util import Inches
+            base_width_in = 13.333  # typical widescreen width
+            prs.slide_width = Inches(base_width_in)
+            prs.slide_height = Inches(base_width_in * first_slide_ratio)
+        blank_layout = prs.slide_layouts[6]
+        from PIL import Image
+        for png in screenshots:
+            slide = prs.slides.add_slide(blank_layout)
+            slide_w = prs.slide_width
+            slide_h = prs.slide_height
+
+            with Image.open(png) as im:
+                img_w_px, img_h_px = im.size
+
+            # Fit image within slide (contain), preserving aspect ratio
+            target_w = slide_w
+            target_h = int(slide_w * img_h_px / img_w_px)
+            if target_h > slide_h:
+                target_h = slide_h
+                target_w = int(slide_h * img_w_px / img_h_px)
+
+            left = int((slide_w - target_w) / 2)
+            top = int((slide_h - target_h) / 2)
+
+            slide.shapes.add_picture(png, left=left, top=top, width=target_w, height=target_h)
+        prs.save(output_pptx_path)
+
+
 class HtmlToPdfApp(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
@@ -130,6 +249,8 @@ class HtmlToPdfApp(ctk.CTk):
         bottom.grid_columnconfigure(3, weight=0)
         bottom.grid_columnconfigure(4, weight=0)
         bottom.grid_columnconfigure(5, weight=0)
+        bottom.grid_columnconfigure(6, weight=0)
+        bottom.grid_columnconfigure(7, weight=0)
 
         # Status label
         self.status_var = ctk.StringVar(value="Ready")
@@ -156,9 +277,15 @@ class HtmlToPdfApp(ctk.CTk):
         self.preview_btn = ctk.CTkButton(bottom, text="Preview HTML", command=self.on_preview_click)
         self.preview_btn.grid(row=0, column=4, padx=12, pady=12, sticky="e")
 
-        # Convert button
+        # Convert buttons
         self.convert_btn = ctk.CTkButton(bottom, text="Convert to PDF", command=self.on_convert_click)
         self.convert_btn.grid(row=0, column=5, padx=12, pady=12, sticky="e")
+
+        self.convert_docx_btn = ctk.CTkButton(bottom, text="Convert to DOCX", command=self.on_convert_docx_click)
+        self.convert_docx_btn.grid(row=0, column=6, padx=12, pady=12, sticky="e")
+
+        self.convert_pptx_btn = ctk.CTkButton(bottom, text="Convert to PPTX", command=self.on_convert_pptx_click)
+        self.convert_pptx_btn.grid(row=0, column=7, padx=12, pady=12, sticky="e")
 
         # Example placeholder
         self._insert_example_placeholder()
@@ -305,6 +432,82 @@ class HtmlToPdfApp(ctk.CTk):
                     self.status_var.set("Conversion failed. See details in alert.")
                     messagebox.showerror("Error", f"An error occurred during conversion:\n\n{error_msg}")
                 self.convert_btn.configure(state="normal")
+
+            self.after(0, finalize)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_convert_docx_click(self) -> None:
+        html = self.html_text.get("1.0", "end-1c").strip()
+        if not html:
+            messagebox.showinfo("No HTML", "Please paste HTML content before converting.")
+            return
+
+        output_path = filedialog.asksaveasfilename(
+            title="Save DOCX As...",
+            defaultextension=".docx",
+            filetypes=[("Word Document", "*.docx")],
+            initialfile="output.docx",
+        )
+
+        if not output_path:
+            return
+
+        self.convert_docx_btn.configure(state="disabled")
+        self.status_var.set("Converting to DOCX...")
+
+        def worker() -> None:
+            error_msg: Optional[str] = None
+            try:
+                convert_html_to_docx_sync(html, output_path)
+            except Exception:
+                error_msg = traceback.format_exc()
+
+            def finalize() -> None:
+                if error_msg is None:
+                    self.status_var.set("DOCX saved successfully!")
+                else:
+                    self.status_var.set("DOCX conversion failed. See details in alert.")
+                    messagebox.showerror("Error", f"An error occurred during conversion:\n\n{error_msg}")
+                self.convert_docx_btn.configure(state="normal")
+
+            self.after(0, finalize)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_convert_pptx_click(self) -> None:
+        html = self.html_text.get("1.0", "end-1c").strip()
+        if not html:
+            messagebox.showinfo("No HTML", "Please paste HTML content before converting.")
+            return
+
+        output_path = filedialog.asksaveasfilename(
+            title="Save PPTX As...",
+            defaultextension=".pptx",
+            filetypes=[("PowerPoint", "*.pptx")],
+            initialfile="output.pptx",
+        )
+
+        if not output_path:
+            return
+
+        self.convert_pptx_btn.configure(state="disabled")
+        self.status_var.set("Converting to PPTX...")
+
+        def worker() -> None:
+            error_msg: Optional[str] = None
+            try:
+                convert_html_to_pptx_sync(html, output_path)
+            except Exception:
+                error_msg = traceback.format_exc()
+
+            def finalize() -> None:
+                if error_msg is None:
+                    self.status_var.set("PPTX saved successfully!")
+                else:
+                    self.status_var.set("PPTX conversion failed. See details in alert.")
+                    messagebox.showerror("Error", f"An error occurred during conversion:\n\n{error_msg}")
+                self.convert_pptx_btn.configure(state="normal")
 
             self.after(0, finalize)
 

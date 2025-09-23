@@ -17,11 +17,11 @@ python -m playwright install chromium --with-deps || true
 rm -rf build dist "HTML-to-PDF Converter.spec" || true
 pyinstaller \
   --noconfirm \
-  --name "HTML-to-PDF Converter" \
+  --name "HTML_to_PDF_Converter" \
   --windowed \
   --hidden-import playwright \
   --hidden-import playwright.sync_api \
   html_to_pdf_app.py
 
-echo "\nBuilt app at: dist/HTML-to-PDF Converter/HTML-to-PDF Converter.app"
+echo "\nBuilt app at: dist/HTML_to_PDF_Converter/HTML_to_PDF_Converter.app"
 

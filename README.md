@@ -1,6 +1,11 @@
 # HTML-to-PDF Converter (macOS .app)
 
-A simple macOS GUI app that converts pasted HTML into a high-fidelity PDF using Playwright (Chromium) and a modern CustomTkinter UI.
+A simple macOS GUI app that converts pasted HTML into high-fidelity outputs using Playwright (Chromium) and a modern CustomTkinter UI.
+
+Supported conversions:
+- HTML → PDF (paged or continuous)
+- HTML → DOCX (image-embedded)
+- HTML → PPTX (image-embedded)
 
 ## Requirements
 - macOS 12+
