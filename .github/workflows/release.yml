@@ -58,25 +58,40 @@ jobs:
         if: matrix.os == 'macos-14'
         run: |
           source .venv/bin/activate
-          chmod +x build_app.sh
-          ./build_app.sh
+          rm -rf build dist "HTML-to-PDF Converter.spec" || true
+          pyinstaller --noconfirm --name "HTML_to_PDF_Converter" --windowed --hidden-import playwright --hidden-import playwright.sync_api html_to_pdf_app.py
 
       - name: Build application (Windows)
         if: matrix.os == 'windows-latest'
+        shell: cmd
         run: |
-          .venv\Scripts\activate
-          build_app.bat
+          call .venv\Scripts\activate.bat
+          rmdir /s /q build dist 2>nul || true
+          del /q "HTML-to-PDF Converter.spec" 2>nul || true
+          pyinstaller --noconfirm --name "HTML_to_PDF_Converter" --windowed --hidden-import playwright --hidden-import playwright.sync_api html_to_pdf_app.py
 
       - name: Package application (macOS)
         if: matrix.os == 'macos-14'
         run: |
-          chmod +x build_release.sh
-          ./build_release.sh
+          source .venv/bin/activate
+          VERSION=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo "1.0.0")
+          RELEASE_NAME="HTML-to-PDF_Converter-${VERSION}-macOS"
+          cd dist/HTML_to_PDF_Converter
+          ditto -c -k --keepParent HTML_to_PDF_Converter.app "../../${RELEASE_NAME}.zip"
+          cd ../..
+          if command -v create-dmg &> /dev/null; then
+            create-dmg --volname "HTML-to-PDF Converter" --window-pos 200 120 --window-size 800 400 --icon-size 100 --icon "HTML_to_PDF_Converter.app" 200 190 --hide-extension "HTML_to_PDF_Converter.app" --app-drop-link 600 185 "${RELEASE_NAME}.dmg" "HTML_to_PDF_Converter" || true
+          fi
 
       - name: Package application (Windows)
         if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
-          build_release.bat
+          if (Test-Path "VERSION") { $VERSION = (Get-Content "VERSION").Trim() } else { $VERSION = "1.0.0" }
+          $RELEASE_NAME = "HTML-to-PDF_Converter-$VERSION-Windows"
+          Set-Location dist
+          Compress-Archive -Path "HTML_to_PDF_Converter\*" -DestinationPath "$RELEASE_NAME.zip" -Force
+          Set-Location ..
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
