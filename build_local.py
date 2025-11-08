@@ -13,8 +13,8 @@ import platform
 def run_command(cmd, description, cwd=None):
     """Run a command and return success/failure"""
     print(f"\n{'='*50}")
-    print(f"🔧 {description}")
-    print(f"📝 Command: {' '.join(cmd)}")
+    print(f"Running: {description}")
+    print(f"Command: {' '.join(cmd)}")
     print('='*50)
 
     try:
@@ -27,10 +27,10 @@ def run_command(cmd, description, cwd=None):
         )
 
         if result.returncode == 0:
-            print(f"✅ {description} succeeded")
+            print(f"SUCCESS: {description}")
             return True, result.stdout, result.stderr
         else:
-            print(f"❌ {description} failed (exit code: {result.returncode})")
+            print(f"FAILED: {description} (exit code: {result.returncode})")
             print("STDOUT (last 500 chars):")
             print(result.stdout[-500:] if result.stdout else "None")
             print("STDERR (last 500 chars):")
@@ -38,19 +38,19 @@ def run_command(cmd, description, cwd=None):
             return False, result.stdout, result.stderr
 
     except subprocess.TimeoutExpired:
-        print(f"⏰ {description} timed out")
+        print(f"TIMEOUT: {description}")
         return False, "", "Timeout"
     except Exception as e:
-        print(f"💥 {description} error: {e}")
+        print(f"ERROR: {description}: {e}")
         return False, "", str(e)
 
 def main():
-    print(f"🚀 HTML-to-PDF Converter Build Test")
-    print(f"📊 Platform: {platform.system()} {platform.release()}")
-    print(f"🐍 Python: {sys.version}")
+    print(f"HTML-to-PDF Converter Build Test")
+    print(f"Platform: {platform.system()} {platform.release()}")
+    print(f"Python: {sys.version}")
 
     # Clean up previous builds
-    print("\n🧹 Cleaning up previous builds...")
+    print("\nCleaning up previous builds...")
     for path in ['build', 'dist', 'HTML-to-PDF Converter.spec']:
         if os.path.exists(path):
             if os.path.isdir(path):
@@ -66,7 +66,7 @@ def main():
         "Upgrading pip and build tools"
     )
     if not success:
-        print("❌ Failed to upgrade pip - exiting")
+        print("FAILED: Could not upgrade pip - exiting")
         return False
 
     # Step 2: Install PyInstaller
@@ -75,7 +75,7 @@ def main():
         "Installing PyInstaller"
     )
     if not success:
-        print("❌ Failed to install PyInstaller - exiting")
+        print("FAILED: Could not install PyInstaller - exiting")
         return False
 
     # Step 3: Test PyInstaller
@@ -84,15 +84,15 @@ def main():
         "Testing PyInstaller installation"
     )
     if not success:
-        print("❌ PyInstaller test failed - exiting")
+        print("FAILED: PyInstaller test failed - exiting")
         return False
 
-    # Step 4: Install tkinter (if needed)
+    # Step 4: Check tkinter availability
     try:
         import tkinter
-        print("✅ tkinter is available")
+        print("SUCCESS: tkinter is available")
     except ImportError:
-        print("⚠️ tkinter not available - this might cause issues")
+        print("WARNING: tkinter not available - this might cause issues")
         # Try to install it
         run_command(
             [sys.executable, '-m', 'pip', 'install', 'tkinter'],
@@ -100,7 +100,7 @@ def main():
         )
 
     # Step 5: Create and test minimal app
-    print("\n📝 Creating minimal test app...")
+    print("\nCreating minimal test app...")
     minimal_code = '''
 import tkinter as tk
 import sys
@@ -115,16 +115,16 @@ def main():
         label = tk.Label(root, text="Build Test Successful!")
         label.pack(pady=20)
 
-        print("✓ GUI components created successfully")
+        print("SUCCESS: GUI components created")
 
         # Don't show window in headless environments
         root.withdraw()
         root.destroy()
 
-        print("✓ Test completed successfully")
+        print("SUCCESS: Test completed")
 
     except Exception as e:
-        print(f"✗ GUI test failed: {e}")
+        print(f"FAILED: GUI test failed: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
@@ -149,25 +149,25 @@ if __name__ == "__main__":
     )
 
     if not success:
-        print("❌ Minimal build failed - PyInstaller issue")
+        print("FAILED: Minimal build failed - PyInstaller issue")
         return False
 
     # Check if build succeeded
     if os.path.exists('dist/test_minimal'):
-        print("✅ Minimal build created dist/test_minimal/")
+        print("SUCCESS: Minimal build created dist/test_minimal/")
         # List contents
         for root, dirs, files in os.walk('dist/test_minimal'):
             for file in files:
                 if file.endswith('.exe'):
                     file_path = os.path.join(root, file)
                     size = os.path.getsize(file_path)
-                    print(f"  📄 Executable: {file} ({size} bytes)")
+                    print(f"  Executable: {file} ({size} bytes)")
     else:
-        print("❌ Minimal build failed - no dist directory")
+        print("FAILED: Minimal build failed - no dist directory")
         return False
 
     # Step 7: Install main dependencies
-    print("\n📦 Installing main application dependencies...")
+    print("\nInstalling main application dependencies...")
     deps = ['customtkinter', 'playwright', 'python-docx', 'python-pptx', 'Pillow']
 
     for dep in deps:
@@ -176,7 +176,7 @@ if __name__ == "__main__":
             f"Installing {dep}"
         )
         if not success:
-            print(f"⚠️ Failed to install {dep} - continuing anyway")
+            print(f"WARNING: Failed to install {dep} - continuing anyway")
 
     # Step 8: Install Playwright browsers
     success, _, _ = run_command(
@@ -185,43 +185,43 @@ if __name__ == "__main__":
     )
 
     # Step 9: Test main app imports
-    print("\n🔍 Testing main application imports...")
+    print("\nTesting main application imports...")
     test_imports = '''
 try:
     import customtkinter as ctk
-    print("✓ customtkinter")
+    print("SUCCESS: customtkinter")
 except ImportError as e:
-    print(f"✗ customtkinter: {e}")
+    print(f"FAILED: customtkinter: {e}")
 
 try:
     import playwright
-    print("✓ playwright")
+    print("SUCCESS: playwright")
 except ImportError as e:
-    print(f"✗ playwright: {e}")
+    print(f"FAILED: playwright: {e}")
 
 try:
     import docx
-    print("✓ python-docx")
+    print("SUCCESS: python-docx")
 except ImportError as e:
-    print(f"✗ python-docx: {e}")
+    print(f"FAILED: python-docx: {e}")
 
 try:
     import pptx
-    print("✓ python-pptx")
+    print("SUCCESS: python-pptx")
 except ImportError as e:
-    print(f"✗ python-pptx: {e}")
+    print(f"FAILED: python-pptx: {e}")
 
 try:
     from PIL import Image
-    print("✓ Pillow")
+    print("SUCCESS: Pillow")
 except ImportError as e:
-    print(f"✗ Pillow: {e}")
+    print(f"FAILED: Pillow: {e}")
 
 try:
     import tkinter
-    print("✓ tkinter")
+    print("SUCCESS: tkinter")
 except ImportError as e:
-    print(f"✗ tkinter: {e}")
+    print(f"FAILED: tkinter: {e}")
 
 print("Import tests completed")
 '''
@@ -235,7 +235,7 @@ print("Import tests completed")
     )
 
     # Step 10: Build main application
-    print("\n🏗️ Building main application...")
+    print("\nBuilding main application...")
     success, _, _ = run_command(
         [sys.executable, '-m', 'PyInstaller',
          '--noconfirm',
@@ -255,7 +255,7 @@ print("Import tests completed")
 
     # Step 11: Verify main build
     if success and os.path.exists('dist/HTML_to_PDF_Converter'):
-        print("✅ Main application build succeeded!")
+        print("SUCCESS: Main application build succeeded!")
 
         # Count executables
         exe_count = 0
@@ -267,9 +267,9 @@ print("Import tests completed")
                     file_path = os.path.join(root, file)
                     size = os.path.getsize(file_path)
                     total_size += size
-                    print(f"  📄 Executable: {file} ({size} bytes)")
+                    print(f"  Executable: {file} ({size} bytes)")
 
-        print(f"📊 Build summary: {exe_count} executables, {total_size} total bytes")
+        print(f"Build summary: {exe_count} executables, {total_size} total bytes")
 
         # Step 12: Create release package
         version = "1.0.0"
@@ -280,31 +280,31 @@ print("Import tests completed")
         release_name = f"HTML-to-PDF_Converter-{version}-Windows"
         zip_path = f"{release_name}.zip"
 
-        print(f"\n📦 Creating release package: {zip_path}")
+        print(f"\nCreating release package: {zip_path}")
         shutil.make_archive(release_name, 'zip', 'dist/HTML_to_PDF_Converter')
 
         if os.path.exists(zip_path):
             zip_size = os.path.getsize(zip_path)
-            print(f"✅ Release package created: {zip_size} bytes")
-            print(f"📁 Package: {zip_path}")
+            print(f"SUCCESS: Release package created: {zip_size} bytes")
+            print(f"Package: {zip_path}")
         else:
-            print("❌ Failed to create release package")
+            print("FAILED: Could not create release package")
 
-        print("\n🎉 BUILD COMPLETED SUCCESSFULLY!")
+        print("\nBUILD COMPLETED SUCCESSFULLY!")
         print("You can now distribute the ZIP file to users.")
         return True
 
     else:
-        print("❌ Main application build failed")
+        print("FAILED: Main application build failed")
         if os.path.exists('dist'):
             print("Contents of dist directory:")
             for item in os.listdir('dist'):
                 item_path = os.path.join('dist', item)
                 if os.path.isdir(item_path):
-                    print(f"  📁 {item}/")
+                    print(f"  {item}/")
                 else:
                     size = os.path.getsize(item_path)
-                    print(f"  📄 {item} ({size} bytes)")
+                    print(f"  {item} ({size} bytes)")
         return False
 
 if __name__ == "__main__":
