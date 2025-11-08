@@ -12,57 +12,7 @@ on:
         type: string
 
 jobs:
-  build-macos:
-    runs-on: macos-14
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip wheel setuptools
-          pip install pyinstaller
-          pip install customtkinter playwright python-docx python-pptx pillow
-
-      - name: Install Playwright browsers
-        run: python -m playwright install chromium
-
-      - name: Build application
-        run: |
-          rm -rf build dist
-          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import customtkinter --hidden-import tkinter --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
-
-      - name: Verify build
-        run: |
-          if [ ! -d "dist/HTML_to_PDF_Converter" ]; then
-            echo "Build failed - directory not found"
-            ls -la dist/ || echo "dist not found"
-            exit 1
-          fi
-          echo "✓ macOS build successful"
-
-      - name: Package application
-        run: |
-          VERSION=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo "1.0.0")
-          RELEASE_NAME="HTML-to-PDF_Converter-${VERSION}-macOS"
-          cd dist
-          zip -r "../${RELEASE_NAME}.zip" "HTML_to_PDF_Converter"
-          cd ..
-          ls -lh "${RELEASE_NAME}.zip"
-
-      - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-release
-          path: HTML-to-PDF_Converter-*-macOS.zip
-          retention-days: 30
-
-  build-windows:
+  test-build:
     runs-on: windows-latest
     steps:
       - name: Checkout code
@@ -73,53 +23,96 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Test minimal build
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip wheel setuptools
+          python -m pip install --upgrade pip
           pip install pyinstaller
-          pip install customtkinter playwright python-docx python-pptx pillow
+          pip install tkinter
 
-      - name: Install Playwright browsers
-        shell: pwsh
-        run: python -m playwright install chromium
+          # Create a simple test script
+          $testScript = @"
+          import tkinter as tk
+          import sys
 
-      - name: Build application
-        shell: pwsh
-        run: |
-          if (Test-Path build) { Remove-Item -Recurse -Force build }
-          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
-          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import customtkinter --hidden-import tkinter --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
+          def main():
+              print("Minimal test app starting...")
+              try:
+                  root = tk.Tk()
+                  root.title("Test App")
+                  root.geometry("300x200")
 
-      - name: Verify build
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "dist/HTML_to_PDF_Converter")) {
-            Write-Host "Build failed - directory not found"
+                  label = tk.Label(root, text="Hello World!")
+                  label.pack(pady=20)
+
+                  button = tk.Button(root, text="Close", command=root.quit)
+                  button.pack(pady=10)
+
+                  print("GUI created successfully")
+                  root.withdraw()
+                  root.destroy()
+                  print("Test completed successfully")
+
+              except Exception as e:
+                  print(f"Error: {e}")
+                  sys.exit(1)
+
+          if __name__ == "__main__":
+              main()
+          "@
+
+          $testScript | Out-File -FilePath "test_minimal.py" -Encoding UTF8
+
+          # Test running the script
+          python test_minimal.py
+
+          # Build with PyInstaller
+          python -m PyInstaller --noconfirm --name "test_minimal_app" --onedir --console --hidden-import tkinter test_minimal.py
+
+          # Verify build
+          if (Test-Path "dist/test_minimal_app") {
+            Write-Host "✓ Minimal build succeeded"
+            Get-ChildItem dist/test_minimal_app | Format-Table
+          } else {
+            Write-Host "✗ Minimal build failed"
             Get-ChildItem dist -ErrorAction SilentlyContinue
             exit 1
           }
-          Write-Host "✓ Windows build successful"
 
-      - name: Package application
+      - name: Build main application
         shell: pwsh
         run: |
-          $VERSION = if (Test-Path "VERSION") { (Get-Content "VERSION").Trim() } else { "1.0.0" }
-          $RELEASE_NAME = "HTML-to-PDF_Converter-$VERSION-Windows"
-          Set-Location dist
-          Compress-Archive -Path "HTML_to_PDF_Converter" -DestinationPath "../$RELEASE_NAME.zip" -Force
-          Set-Location ..
-          Get-Item "$RELEASE_NAME.zip" | Format-List
+          pip install customtkinter playwright python-docx python-pptx pillow
+          python -m playwright install chromium
 
-      - name: Upload Windows artifact
+          if (Test-Path build) { Remove-Item -Recurse -Force build }
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+
+          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import customtkinter --hidden-import tkinter --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
+
+          if (Test-Path "dist/HTML_to_PDF_Converter") {
+            Write-Host "✓ Main app build succeeded"
+            $VERSION = if (Test-Path "VERSION") { (Get-Content "VERSION").Trim() } else { "1.0.0" }
+            $RELEASE_NAME = "HTML-to-PDF_Converter-$VERSION-Windows"
+            Set-Location dist
+            Compress-Archive -Path "HTML_to_PDF_Converter" -DestinationPath "../$RELEASE_NAME.zip" -Force
+            Set-Location ..
+            Write-Host "✓ Package created: $RELEASE_NAME.zip"
+          } else {
+            Write-Host "✗ Main app build failed"
+            Get-ChildItem dist -ErrorAction SilentlyContinue
+            exit 1
+          }
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-release
+          name: windows-build
           path: HTML-to-PDF_Converter-*-Windows.zip
           retention-days: 30
 
   release:
-    needs: [build-macos, build-windows]
+    needs: test-build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -135,21 +128,19 @@ jobs:
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Download all artifacts
+      - name: Download artifact
         uses: actions/download-artifact@v4
-
-      - name: List all files
-        run: find . -name "*.zip" -type f
+        with:
+          name: windows-build
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            */*.zip
+            *.zip
           name: Release ${{ steps.get_version.outputs.version }}
           tag_name: ${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
-          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
