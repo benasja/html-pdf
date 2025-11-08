@@ -87,7 +87,29 @@ jobs:
         run: python -m playwright install chromium
 
       - name: Build main application
-        run: python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import customtkinter --hidden-import tkinter --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
+        run: |
+          echo "=== BUILDING MAIN APPLICATION ==="
+          echo "Python version: $(python --version)"
+          echo "Working directory: $(pwd)"
+          echo "Environment: $PATH"
+
+          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import customtkinter --hidden-import tkinter --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
+
+          echo "Build exit code: $?"
+          if [ $? -ne 0 ]; then
+            echo "=== BUILD FAILED - SHOWING LOGS ==="
+            if [ -f "HTML_to_PDF_Converter.spec" ]; then
+              echo "Spec file exists"
+              head -20 "HTML_to_PDF_Converter.spec"
+            fi
+            if [ -d "build" ]; then
+              echo "Build directory exists"
+              ls -la build/
+            fi
+            exit 1
+          fi
+
+          echo "=== BUILD COMPLETED ==="
 
       - name: Check main build
         run: |
