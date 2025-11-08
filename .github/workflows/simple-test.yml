@@ -50,12 +50,13 @@ jobs:
         run: python -m PyInstaller --noconfirm --name minimal_test --onedir --console --hidden-import tkinter minimal_test.py
 
       - name: Check minimal build
+        shell: pwsh
         run: |
-          if exist "dist\minimal_test\minimal_test.exe" (
-            echo SUCCESS: Minimal build works!
-            dir dist\minimal_test
-          ) else (
-            echo FAILED: Minimal build failed
-            if exist dist dir dist
-            exit /b 1
-          )
+          if (Test-Path "dist/minimal_test/minimal_test.exe") {
+            Write-Host "SUCCESS: Minimal build works!"
+            Get-ChildItem dist/minimal_test
+          } else {
+            Write-Host "FAILED: Minimal build failed"
+            if (Test-Path dist) { Get-ChildItem dist }
+            exit 1
+          }
