@@ -26,6 +26,11 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Install system dependencies (macOS)
+        if: matrix.os == 'macos-14'
+        run: |
+          brew install tcl-tk || true
+
       - name: Install dependencies (macOS)
         if: matrix.os == 'macos-14'
         run: |
@@ -44,10 +49,11 @@ jobs:
         if: matrix.os == 'macos-14'
         run: |
           rm -rf build dist "HTML-to-PDF Converter.spec" || true
-          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
+          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx --hidden-import customtkinter html_to_pdf_app.py
           if [ ! -d "dist/HTML_to_PDF_Converter" ]; then
             echo "Build failed: app directory not found"
             ls -la dist/ || echo "dist directory not found"
+            find dist -type f -name "*.exe" -o -name "*.app" || echo "No executable found"
             exit 1
           fi
           echo "Build successful"
@@ -59,7 +65,7 @@ jobs:
           if (Test-Path build) { Remove-Item -Recurse -Force build }
           if (Test-Path dist) { Remove-Item -Recurse -Force dist }
           if (Test-Path "HTML-to-PDF Converter.spec") { Remove-Item -Force "HTML-to-PDF Converter.spec" }
-          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
+          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx --hidden-import customtkinter html_to_pdf_app.py
           if (-not (Test-Path "dist\HTML_to_PDF_Converter")) {
             Write-Error "Build failed: app directory not found"
             Get-ChildItem -Recurse dist -ErrorAction SilentlyContinue | Format-Table
