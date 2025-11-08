@@ -26,17 +26,17 @@ jobs:
 
           echo "Upgrading pip..."
           python -m pip install --upgrade pip wheel setuptools
-          if %ERRORLEVEL% NEQ 0 (
-            echo "FAILED: pip upgrade failed"
-            exit /b 1
-          )
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "FAILED: pip upgrade failed"
+            exit 1
+          }
 
           echo "Testing pip..."
           pip --version
-          if %ERRORLEVEL% NEQ 0 (
-            echo "FAILED: pip test failed"
-            exit /b 1
-          )
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "FAILED: pip test failed"
+            exit 1
+          }
 
           echo "SUCCESS: pip works"
 
@@ -60,11 +60,11 @@ jobs:
 
           echo "Testing PyInstaller..."
           python -m PyInstaller --version
-          if %ERRORLEVEL% NEQ 0 (
-            echo "FAILED: PyInstaller not working"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "FAILED: PyInstaller not working"
             python -c "import PyInstaller; print('PyInstaller imported but --version failed')"
-            exit /b 1
-          )
+            exit 1
+          }
 
           echo "SUCCESS: PyInstaller works"
 
@@ -102,25 +102,25 @@ jobs:
 
           echo "Running test script..."
           python test_tk.py
-          if %ERRORLEVEL% NEQ 0 (
-            echo "FAILED: tkinter test failed"
-            exit /b 1
-          )
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "FAILED: tkinter test failed"
+            exit 1
+          }
 
           echo "Building tkinter test..."
           python -m PyInstaller --noconfirm --name test_tk --onedir --console --hidden-import tkinter test_tk.py
-          if %ERRORLEVEL% NEQ 0 (
-            echo "FAILED: tkinter build failed"
-            exit /b 1
-          )
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "FAILED: tkinter build failed"
+            exit 1
+          }
 
-          if exist "dist\test_tk\test_tk.exe" (
-            echo "SUCCESS: tkinter build works"
-            dir dist\test_tk
-          ) else (
-            echo "FAILED: tkinter executable not found"
-            exit /b 1
-          )
+          if (Test-Path "dist\test_tk\test_tk.exe") {
+            Write-Host "SUCCESS: tkinter build works"
+            Get-ChildItem dist\test_tk
+          } else {
+            Write-Host "FAILED: tkinter executable not found"
+            exit 1
+          }
 
   debug-dependencies:
     runs-on: windows-latest
@@ -142,15 +142,16 @@ jobs:
           echo "Installing dependencies one by one..."
           set DEPENDENCIES=customtkinter playwright python-docx python-pptx Pillow
 
-          for %%d in (%DEPENDENCIES%) do (
-            echo Installing %%d...
-            pip install %%d
-            if !ERRORLEVEL! NEQ 0 (
-              echo WARNING: Failed to install %%d
-            ) else (
-              echo SUCCESS: %%d installed
-            )
-          )
+          $dependencies = @("customtkinter", "playwright", "python-docx", "python-pptx", "Pillow")
+          foreach ($dep in $dependencies) {
+            Write-Host "Installing $dep..."
+            pip install $dep
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "WARNING: Failed to install $dep"
+            } else {
+              Write-Host "SUCCESS: $dep installed"
+            }
+          }
 
           echo "Testing imports..."
           python -c "import customtkinter; print('customtkinter: OK')"
@@ -184,16 +185,16 @@ jobs:
           echo "Starting build..."
           python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import customtkinter --hidden-import tkinter --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
 
-          if %ERRORLEVEL% NEQ 0 (
-            echo "FAILED: Build command failed"
-            exit /b 1
-          )
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "FAILED: Build command failed"
+            exit 1
+          }
 
-          if exist "dist\HTML_to_PDF_Converter\HTML_to_PDF_Converter.exe" (
-            echo "SUCCESS: Build completed"
-            dir dist\HTML_to_PDF_Converter | findstr .exe
-          ) else (
-            echo "FAILED: Executable not found"
-            if exist dist dir dist
-            exit /b 1
-          )
+          if (Test-Path "dist\HTML_to_PDF_Converter\HTML_to_PDF_Converter.exe") {
+            Write-Host "SUCCESS: Build completed"
+            Get-ChildItem dist\HTML_to_PDF_Converter -Filter *.exe
+          } else {
+            Write-Host "FAILED: Executable not found"
+            if (Test-Path dist) { Get-ChildItem dist }
+            exit 1
+          }

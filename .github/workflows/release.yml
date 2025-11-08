@@ -112,32 +112,34 @@ jobs:
           echo "=== BUILD COMPLETED ==="
 
       - name: Check main build
+        shell: pwsh
         run: |
-          if exist "dist\HTML_to_PDF_Converter\HTML_to_PDF_Converter.exe" (
-            echo SUCCESS: Main build worked
-            dir dist\HTML_to_PDF_Converter | findstr .exe
-          ) else (
-            echo FAILED: Main build failed
-            if exist dist dir dist
-            exit /b 1
-          )
+          if (Test-Path "dist\HTML_to_PDF_Converter\HTML_to_PDF_Converter.exe") {
+            Write-Host "SUCCESS: Main build worked"
+            Get-ChildItem dist\HTML_to_PDF_Converter -Filter *.exe
+          } else {
+            Write-Host "FAILED: Main build failed"
+            if (Test-Path dist) { Get-ChildItem dist }
+            exit 1
+          }
 
       - name: Create release package
+        shell: pwsh
         run: |
-          if exist VERSION (
-            set /p VERSION=<VERSION
-          ) else (
-            set VERSION=1.0.0
-          )
-          set RELEASE_NAME=HTML-to-PDF_Converter-%VERSION%-Windows
-          powershell "Compress-Archive -Path 'dist\HTML_to_PDF_Converter' -DestinationPath '%RELEASE_NAME%.zip' -Force"
-          if exist "%RELEASE_NAME%.zip" (
-            echo SUCCESS: Package created
-            dir "%RELEASE_NAME%.zip"
-          ) else (
-            echo FAILED: Package creation failed
-            exit /b 1
-          )
+          if (Test-Path "VERSION") {
+            $version = (Get-Content "VERSION").Trim()
+          } else {
+            $version = "1.0.0"
+          }
+          $releaseName = "HTML-to-PDF_Converter-$version-Windows"
+          Compress-Archive -Path "dist\HTML_to_PDF_Converter" -DestinationPath "$releaseName.zip" -Force
+          if (Test-Path "$releaseName.zip") {
+            Write-Host "SUCCESS: Package created"
+            Get-Item "$releaseName.zip"
+          } else {
+            Write-Host "FAILED: Package creation failed"
+            exit 1
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
