@@ -22,8 +22,13 @@ def _ensure_playwright_browsers() -> None:
     directory that isn't shipped. We redirect to the user cache path and
     install Chromium there if not already present.
     """
-    # Use the default user cache for Playwright browsers on macOS
-    user_cache = os.path.expanduser("~/Library/Caches/ms-playwright")
+    # Use the default user cache for Playwright browsers (cross-platform)
+    if sys.platform == "win32":
+        user_cache = os.path.join(os.environ.get("LOCALAPPDATA", ""), "ms-playwright")
+    elif sys.platform == "darwin":
+        user_cache = os.path.expanduser("~/Library/Caches/ms-playwright")
+    else:
+        user_cache = os.path.expanduser("~/.cache/ms-playwright")
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", user_cache)
 
     chromium_installed_marker = os.path.join(user_cache, "chromium-*")
@@ -326,7 +331,12 @@ class HtmlToPdfApp(ctk.CTk):
         self.html_text.insert("1.0", placeholder)
 
     def _session_path(self) -> str:
-        base = os.path.expanduser("~/Library/Application Support/HTML-to-PDF Converter")
+        if sys.platform == "win32":
+            base = os.path.join(os.environ.get("APPDATA", ""), "HTML-to-PDF Converter")
+        elif sys.platform == "darwin":
+            base = os.path.expanduser("~/Library/Application Support/HTML-to-PDF Converter")
+        else:
+            base = os.path.expanduser("~/.config/HTML-to-PDF Converter")
         os.makedirs(base, exist_ok=True)
         return os.path.join(base, "last_session.html")
 
