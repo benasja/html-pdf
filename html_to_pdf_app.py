@@ -685,8 +685,33 @@ class HtmlToPdfApp(ctk.CTk):
 
 
 def main() -> None:
-    app = HtmlToPdfApp()
-    app.mainloop()
+    # Only create GUI if we have a display (not in headless environments)
+    import os
+    import sys
+
+    # Check for display environment
+    has_display = False
+    if sys.platform == "win32":
+        has_display = True  # Windows always has display
+    elif sys.platform == "darwin":
+        has_display = True  # macOS always has display
+    else:
+        # Linux/Unix: check for DISPLAY or WAYLAND_DISPLAY
+        has_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+    if has_display:
+        try:
+            app = HtmlToPdfApp()
+            app.mainloop()
+        except Exception as e:
+            print(f"GUI Error: {e}")
+            print("This might be a headless environment. Use command line conversion instead.")
+            sys.exit(1)
+    else:
+        print("No display detected. This is a GUI application that requires a display.")
+        print("Usage: python html_to_pdf_app.py")
+        print("Or run in an environment with a display server.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
@@ -695,7 +720,20 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--help":
         print("HTML-to-PDF Converter")
         print("A cross-platform GUI app for converting HTML to PDF, DOCX, and PPTX.")
+        print("\nUsage:")
+        print("  python html_to_pdf_app.py    # Start GUI")
+        print("  python html_to_pdf_app.py --help  # Show this help")
         sys.exit(0)
-    main()
+
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nApplication interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"Application error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
