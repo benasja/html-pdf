@@ -12,7 +12,7 @@ on:
         type: string
 
 jobs:
-  test-build:
+  build:
     runs-on: windows-latest
     steps:
       - name: Checkout code
@@ -23,96 +23,92 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Test minimal build
+      - name: Run build test
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
+          Write-Host "🚀 Starting HTML-to-PDF Converter Build Test" -ForegroundColor Green
+          Write-Host "📊 Platform: Windows" -ForegroundColor Cyan
+          Write-Host "🐍 Python version: 3.10" -ForegroundColor Cyan
+
+          # Clean up
+          Write-Host "`n🧹 Cleaning up previous builds..." -ForegroundColor Yellow
+          if (Test-Path build) { Remove-Item -Recurse -Force build; Write-Host "  Removed build/" }
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist; Write-Host "  Removed dist/" }
+          if (Test-Path "HTML-to-PDF Converter.spec") { Remove-Item "HTML-to-PDF Converter.spec"; Write-Host "  Removed spec file" }
+
+          # Install dependencies
+          Write-Host "`n📦 Installing dependencies..." -ForegroundColor Yellow
+          python -m pip install --upgrade pip wheel setuptools
+          if ($LASTEXITCODE -ne 0) { Write-Host "❌ Failed to upgrade pip" -ForegroundColor Red; exit 1 }
+
           pip install pyinstaller
-          pip install tkinter
+          if ($LASTEXITCODE -ne 0) { Write-Host "❌ Failed to install PyInstaller" -ForegroundColor Red; exit 1 }
 
-          # Create a simple test script
-          $testScript = @"
-          import tkinter as tk
-          import sys
+          # Test PyInstaller
+          python -m PyInstaller --version
+          if ($LASTEXITCODE -ne 0) { Write-Host "❌ PyInstaller test failed" -ForegroundColor Red; exit 1 }
 
-          def main():
-              print("Minimal test app starting...")
-              try:
-                  root = tk.Tk()
-                  root.title("Test App")
-                  root.geometry("300x200")
+          # Install main dependencies
+          Write-Host "`n📚 Installing application dependencies..." -ForegroundColor Yellow
+          pip install customtkinter playwright python-docx python-pptx Pillow
+          if ($LASTEXITCODE -ne 0) { Write-Host "⚠️ Some dependencies failed - continuing" -ForegroundColor Yellow }
 
-                  label = tk.Label(root, text="Hello World!")
-                  label.pack(pady=20)
-
-                  button = tk.Button(root, text="Close", command=root.quit)
-                  button.pack(pady=10)
-
-                  print("GUI created successfully")
-                  root.withdraw()
-                  root.destroy()
-                  print("Test completed successfully")
-
-              except Exception as e:
-                  print(f"Error: {e}")
-                  sys.exit(1)
-
-          if __name__ == "__main__":
-              main()
-          "@
-
-          $testScript | Out-File -FilePath "test_minimal.py" -Encoding UTF8
-
-          # Test running the script
-          python test_minimal.py
-
-          # Build with PyInstaller
-          python -m PyInstaller --noconfirm --name "test_minimal_app" --onedir --console --hidden-import tkinter test_minimal.py
-
-          # Verify build
-          if (Test-Path "dist/test_minimal_app") {
-            Write-Host "✓ Minimal build succeeded"
-            Get-ChildItem dist/test_minimal_app | Format-Table
-          } else {
-            Write-Host "✗ Minimal build failed"
-            Get-ChildItem dist -ErrorAction SilentlyContinue
-            exit 1
-          }
-
-      - name: Build main application
-        shell: pwsh
-        run: |
-          pip install customtkinter playwright python-docx python-pptx pillow
+          # Install Playwright browsers
+          Write-Host "`n🌐 Installing Playwright browsers..." -ForegroundColor Yellow
           python -m playwright install chromium
+          if ($LASTEXITCODE -ne 0) { Write-Host "⚠️ Playwright browser install failed - continuing" -ForegroundColor Yellow }
 
-          if (Test-Path build) { Remove-Item -Recurse -Force build }
-          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
-
+          # Build application
+          Write-Host "`n🏗️ Building HTML-to-PDF Converter..." -ForegroundColor Yellow
           python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import customtkinter --hidden-import tkinter --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
 
-          if (Test-Path "dist/HTML_to_PDF_Converter") {
-            Write-Host "✓ Main app build succeeded"
-            $VERSION = if (Test-Path "VERSION") { (Get-Content "VERSION").Trim() } else { "1.0.0" }
-            $RELEASE_NAME = "HTML-to-PDF_Converter-$VERSION-Windows"
-            Set-Location dist
-            Compress-Archive -Path "HTML_to_PDF_Converter" -DestinationPath "../$RELEASE_NAME.zip" -Force
-            Set-Location ..
-            Write-Host "✓ Package created: $RELEASE_NAME.zip"
-          } else {
-            Write-Host "✗ Main app build failed"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Build failed" -ForegroundColor Red
+            exit 1
+          }
+
+          # Verify build
+          if (-not (Test-Path "dist/HTML_to_PDF_Converter")) {
+            Write-Host "❌ Build directory not found" -ForegroundColor Red
             Get-ChildItem dist -ErrorAction SilentlyContinue
             exit 1
           }
+
+          Write-Host "✅ Build succeeded!" -ForegroundColor Green
+          Get-ChildItem dist/HTML_to_PDF_Converter -Recurse | Where-Object { $_.Name -like "*.exe" } | ForEach-Object {
+            $size = [math]::Round($_.Length / 1MB, 2)
+            Write-Host "  📄 $($_.Name) (${size} MB)" -ForegroundColor Cyan
+          }
+
+          # Create release package
+          $version = if (Test-Path "VERSION") { (Get-Content "VERSION").Trim() } else { "1.0.0" }
+          $releaseName = "HTML-to-PDF_Converter-$version-Windows"
+
+          Write-Host "`n📦 Creating release package: $releaseName.zip" -ForegroundColor Yellow
+          Set-Location dist
+          Compress-Archive -Path "HTML_to_PDF_Converter" -DestinationPath "../$releaseName.zip" -Force
+          Set-Location ..
+
+          if (Test-Path "$releaseName.zip") {
+            $size = [math]::Round((Get-Item "$releaseName.zip").Length / 1MB, 2)
+            Write-Host "✅ Release package created: ${size} MB" -ForegroundColor Green
+          } else {
+            Write-Host "❌ Failed to create release package" -ForegroundColor Red
+            exit 1
+          }
+
+          Write-Host "`n🎉 BUILD COMPLETED SUCCESSFULLY!" -ForegroundColor Green
+          Write-Host "📁 Release package: $releaseName.zip" -ForegroundColor Cyan
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build
+          name: windows-release
           path: HTML-to-PDF_Converter-*-Windows.zip
           retention-days: 30
 
   release:
-    needs: test-build
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -131,7 +127,7 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: windows-build
+          name: windows-release
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
