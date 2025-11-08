@@ -1,0 +1,28 @@
+===========================================
+COMMAND TO FIX ALL COMMITS IN html-pdf
+==========================================
+
+Open Git Bash (or WSL) and run this command from the html-pdf directory:
+
+git filter-branch -f --env-filter '
+if [ "$GIT_COMMITTER_EMAIL" = "benjanusevicvius@gmail.com" ] || [ "$GIT_COMMITTER_EMAIL" = "benjanusevicvius@gmai.com" ]; then
+  export GIT_COMMITTER_EMAIL="benjanusevicius@gmail.com"
+  export GIT_COMMITTER_NAME="benasja"
+fi
+if [ "$GIT_AUTHOR_EMAIL" = "benjanusevicvius@gmail.com" ] || [ "$GIT_AUTHOR_EMAIL" = "benjanusevicvius@gmai.com" ]; then
+  export GIT_AUTHOR_EMAIL="benjanusevicius@gmail.com"
+  export GIT_AUTHOR_NAME="benasja"
+fi
+if [ "$GIT_COMMITTER_NAME" = "Benas" ]; then
+  export GIT_COMMITTER_NAME="benasja"
+fi
+if [ "$GIT_AUTHOR_NAME" = "Benas" ]; then
+  export GIT_AUTHOR_NAME="benasja"
+fi
+' --tag-name-filter cat -- --branches --tags
+
+Then force push:
+git push origin --all --force
+
+WARNING: This rewrites history! Make sure no one else is working on this repo!
+
