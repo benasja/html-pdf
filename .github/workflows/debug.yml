@@ -140,7 +140,6 @@ jobs:
           python -m pip install --upgrade pip wheel setuptools
 
           echo "Installing dependencies one by one..."
-          set DEPENDENCIES=customtkinter playwright python-docx python-pptx Pillow
 
           $dependencies = @("customtkinter", "playwright", "python-docx", "python-pptx", "Pillow")
           foreach ($dep in $dependencies) {
