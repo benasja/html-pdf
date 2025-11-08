@@ -1,0 +1,199 @@
+name: Debug Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      debug_step:
+        description: 'Which step to debug (pip, pyinstaller, tkinter, dependencies, build)'
+        required: false
+        default: 'all'
+        type: string
+
+jobs:
+  debug-pip:
+    runs-on: windows-latest
+    if: ${{ github.event.inputs.debug_step == 'pip' || github.event.inputs.debug_step == 'all' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Debug pip
+        run: |
+          echo "=== PIP DEBUG ==="
+          python --version
+          python -c "import sys; print('Python executable:', sys.executable)"
+          python -c "import sys; print('Python path:', sys.path[:3])"
+
+          echo "Upgrading pip..."
+          python -m pip install --upgrade pip wheel setuptools
+          if %ERRORLEVEL% NEQ 0 (
+            echo "FAILED: pip upgrade failed"
+            exit /b 1
+          )
+
+          echo "Testing pip..."
+          pip --version
+          if %ERRORLEVEL% NEQ 0 (
+            echo "FAILED: pip test failed"
+            exit /b 1
+          )
+
+          echo "SUCCESS: pip works"
+
+  debug-pyinstaller:
+    runs-on: windows-latest
+    if: ${{ github.event.inputs.debug_step == 'pyinstaller' || github.event.inputs.debug_step == 'all' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Debug PyInstaller
+        run: |
+          echo "=== PYINSTALLER DEBUG ==="
+          python -m pip install --upgrade pip wheel setuptools
+          pip install pyinstaller
+
+          echo "Testing PyInstaller..."
+          python -m PyInstaller --version
+          if %ERRORLEVEL% NEQ 0 (
+            echo "FAILED: PyInstaller not working"
+            python -c "import PyInstaller; print('PyInstaller imported but --version failed')"
+            exit /b 1
+          )
+
+          echo "SUCCESS: PyInstaller works"
+
+  debug-tkinter:
+    runs-on: windows-latest
+    if: ${{ github.event.inputs.debug_step == 'tkinter' || github.event.inputs.debug_step == 'all' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Debug tkinter
+        run: |
+          echo "=== TKINTER DEBUG ==="
+          python -c "import tkinter; print('tkinter imported successfully')"
+          python -c "import tkinter as tk; root = tk.Tk(); root.withdraw(); root.destroy(); print('tkinter GUI test passed')"
+
+          echo "Creating test script..."
+          echo import tkinter as tk > test_tk.py
+          echo import sys >> test_tk.py
+          echo def main(): >> test_tk.py
+          echo     try: >> test_tk.py
+          echo         root = tk.Tk() >> test_tk.py
+          echo         root.withdraw() >> test_tk.py
+          echo         root.destroy() >> test_tk.py
+          echo         print("SUCCESS: tkinter works") >> test_tk.py
+          echo     except Exception as e: >> test_tk.py
+          echo         print(f"FAILED: {e}") >> test_tk.py
+          echo         sys.exit(1) >> test_tk.py
+          echo if __name__ == "__main__": main() >> test_tk.py
+
+          echo "Running test script..."
+          python test_tk.py
+          if %ERRORLEVEL% NEQ 0 (
+            echo "FAILED: tkinter test failed"
+            exit /b 1
+          )
+
+          echo "Building tkinter test..."
+          python -m PyInstaller --noconfirm --name test_tk --onedir --console --hidden-import tkinter test_tk.py
+          if %ERRORLEVEL% NEQ 0 (
+            echo "FAILED: tkinter build failed"
+            exit /b 1
+          )
+
+          if exist "dist\test_tk\test_tk.exe" (
+            echo "SUCCESS: tkinter build works"
+            dir dist\test_tk
+          ) else (
+            echo "FAILED: tkinter executable not found"
+            exit /b 1
+          )
+
+  debug-dependencies:
+    runs-on: windows-latest
+    if: ${{ github.event.inputs.debug_step == 'dependencies' || github.event.inputs.debug_step == 'all' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Debug dependencies
+        run: |
+          echo "=== DEPENDENCIES DEBUG ==="
+          python -m pip install --upgrade pip wheel setuptools
+
+          echo "Installing dependencies one by one..."
+          set DEPENDENCIES=customtkinter playwright python-docx python-pptx Pillow
+
+          for %%d in (%DEPENDENCIES%) do (
+            echo Installing %%d...
+            pip install %%d
+            if !ERRORLEVEL! NEQ 0 (
+              echo WARNING: Failed to install %%d
+            ) else (
+              echo SUCCESS: %%d installed
+            )
+          )
+
+          echo "Testing imports..."
+          python -c "import customtkinter; print('customtkinter: OK')"
+          python -c "import playwright; print('playwright: OK')"
+          python -c "import docx; print('docx: OK')"
+          python -c "import pptx; print('pptx: OK')"
+          python -c "from PIL import Image; print('PIL: OK')"
+
+  debug-build:
+    runs-on: windows-latest
+    if: ${{ github.event.inputs.debug_step == 'build' || github.event.inputs.debug_step == 'all' }}
+    needs: [debug-dependencies]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Debug full build
+        run: |
+          echo "=== FULL BUILD DEBUG ==="
+          python -m pip install --upgrade pip wheel setuptools
+          pip install pyinstaller customtkinter playwright python-docx python-pptx Pillow
+
+          echo "Installing Playwright browsers..."
+          python -m playwright install chromium
+
+          echo "Starting build..."
+          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import customtkinter --hidden-import tkinter --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
+
+          if %ERRORLEVEL% NEQ 0 (
+            echo "FAILED: Build command failed"
+            exit /b 1
+          )
+
+          if exist "dist\HTML_to_PDF_Converter\HTML_to_PDF_Converter.exe" (
+            echo "SUCCESS: Build completed"
+            dir dist\HTML_to_PDF_Converter | findstr .exe
+          ) else (
+            echo "FAILED: Executable not found"
+            if exist dist dir dist
+            exit /b 1
+          )
