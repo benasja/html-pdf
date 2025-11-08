@@ -12,11 +12,8 @@ on:
         type: string
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        os: [macos-14, windows-latest]
-    runs-on: ${{ matrix.os }}
+  build-macos:
+    runs-on: macos-14
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,91 +23,109 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install system dependencies (macOS)
-        if: matrix.os == 'macos-14'
-        run: |
-          brew install tcl-tk || true
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip wheel setuptools
-          pip install -r requirements.txt
-          python -m playwright install chromium --with-deps || python -m playwright install chromium || true
+          pip install pyinstaller
+          pip install customtkinter playwright python-docx python-pptx pillow
+
+      - name: Install Playwright browsers
+        run: python -m playwright install chromium
 
       - name: Build application
         run: |
-          rm -rf build dist 2>/dev/null || true
-          del /q build dist 2>nul || true
-          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx --hidden-import customtkinter --hidden-import tkinter html_to_pdf_app.py
+          rm -rf build dist
+          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import customtkinter --hidden-import tkinter --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
 
       - name: Verify build
         run: |
-          if [ "${{ matrix.os }}" == "macos-14" ]; then
-            if [ ! -d "dist/HTML_to_PDF_Converter" ]; then
-              echo "Build failed: app directory not found"
-              ls -la dist/ || echo "dist directory not found"
-              exit 1
-            fi
-          else
-            if (-not (Test-Path "dist\HTML_to_PDF_Converter")) {
-              Write-Error "Build failed: app directory not found"
-              Get-ChildItem dist -ErrorAction SilentlyContinue
-              exit 1
-            }
+          if [ ! -d "dist/HTML_to_PDF_Converter" ]; then
+            echo "Build failed - directory not found"
+            ls -la dist/ || echo "dist not found"
+            exit 1
           fi
-          echo "Build verification passed"
+          echo "✓ macOS build successful"
 
       - name: Package application
         run: |
           VERSION=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo "1.0.0")
-          if [ "${{ matrix.os }}" == "macos-14" ]; then
-            RELEASE_NAME="HTML-to-PDF_Converter-${VERSION}-macOS"
-            cd dist
-            zip -r "../${RELEASE_NAME}.zip" "HTML_to_PDF_Converter"
-            cd ..
-          else
-            $VERSION = if (Test-Path "VERSION") { (Get-Content "VERSION").Trim() } else { "1.0.0" }
-            $RELEASE_NAME = "HTML-to-PDF_Converter-$VERSION-Windows"
-            Set-Location dist
-            Compress-Archive -Path "HTML_to_PDF_Converter" -DestinationPath "$RELEASE_NAME.zip" -Force
-            Set-Location ..
-          fi
+          RELEASE_NAME="HTML-to-PDF_Converter-${VERSION}-macOS"
+          cd dist
+          zip -r "../${RELEASE_NAME}.zip" "HTML_to_PDF_Converter"
+          cd ..
+          ls -lh "${RELEASE_NAME}.zip"
 
-      - name: Verify package
-        run: |
-          if [ "${{ matrix.os }}" == "macos-14" ]; then
-            if [ ! -f "*.zip" ]; then
-              echo "Error: ZIP file not created"
-              ls -la *.zip 2>/dev/null || echo "No zip files found"
-              exit 1
-            fi
-            ls -lh *.zip
-          else
-            if (-not (Test-Path "*.zip")) {
-              Write-Error "Error: ZIP file not created"
-              Get-ChildItem *.zip -ErrorAction SilentlyContinue
-              exit 1
-            }
-            Get-Item *.zip | Format-List
-          fi
-
-      - name: Upload artifacts
+      - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-packages-${{ matrix.os }}
-          path: |
-            *.zip
-          if-no-files-found: error
+          name: macos-release
+          path: HTML-to-PDF_Converter-*-macOS.zip
+          retention-days: 30
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          pip install pyinstaller
+          pip install customtkinter playwright python-docx python-pptx pillow
+
+      - name: Install Playwright browsers
+        shell: pwsh
+        run: python -m playwright install chromium
+
+      - name: Build application
+        shell: pwsh
+        run: |
+          if (Test-Path build) { Remove-Item -Recurse -Force build }
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+          python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import customtkinter --hidden-import tkinter --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
+
+      - name: Verify build
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/HTML_to_PDF_Converter")) {
+            Write-Host "Build failed - directory not found"
+            Get-ChildItem dist -ErrorAction SilentlyContinue
+            exit 1
+          }
+          Write-Host "✓ Windows build successful"
+
+      - name: Package application
+        shell: pwsh
+        run: |
+          $VERSION = if (Test-Path "VERSION") { (Get-Content "VERSION").Trim() } else { "1.0.0" }
+          $RELEASE_NAME = "HTML-to-PDF_Converter-$VERSION-Windows"
+          Set-Location dist
+          Compress-Archive -Path "HTML_to_PDF_Converter" -DestinationPath "../$RELEASE_NAME.zip" -Force
+          Set-Location ..
+          Get-Item "$RELEASE_NAME.zip" | Format-List
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: HTML-to-PDF_Converter-*-Windows.zip
           retention-days: 30
 
   release:
-    needs: build
+    needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get version from tag
+      - name: Get version
         id: get_version
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
@@ -119,34 +134,22 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/}"
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Version: ${VERSION}"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
-        with:
-          path: dist
-          pattern: release-packages-*
 
-      - name: Prepare release files
-        run: |
-          mkdir -p dist/release-files
-          find dist -type f -name "*.zip" -exec cp {} dist/release-files/ \;
-          echo "Release files:"
-          ls -la dist/release-files/
-          if [ -z "$(ls -A dist/release-files/ 2>/dev/null)" ]; then
-            echo "Error: No release files found"
-            find dist -type f
-            exit 1
-          fi
+      - name: List all files
+        run: find . -name "*.zip" -type f
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/release-files/*
+          files: |
+            */*.zip
           name: Release ${{ steps.get_version.outputs.version }}
           tag_name: ${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
