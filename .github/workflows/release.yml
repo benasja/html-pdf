@@ -153,6 +153,8 @@ jobs:
   release:
     needs: build-main
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -172,6 +174,13 @@ jobs:
         with:
           name: windows-release
 
+      - name: List release files
+        run: |
+          echo "=== RELEASE FILES ==="
+          find . -name "*.zip" -type f -exec ls -lh {} \;
+          echo "=== TOTAL FILES ==="
+          find . -name "*.zip" -type f | wc -l
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -181,5 +190,7 @@ jobs:
           tag_name: ${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
