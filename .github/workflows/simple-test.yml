@@ -1,0 +1,62 @@
+name: Simple Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'What to test'
+        required: false
+        default: 'basic'
+        type: string
+
+jobs:
+  test-basic:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test Python
+        run: python --version
+
+      - name: Test pip
+        run: |
+          python -m pip install --upgrade pip
+          pip --version
+
+      - name: Test PyInstaller
+        run: |
+          pip install pyinstaller
+          python -m PyInstaller --version
+
+      - name: Test tkinter
+        run: |
+          python -c "import tkinter; print('tkinter OK')"
+          python -c "import tkinter as tk; root=tk.Tk(); root.withdraw(); root.destroy(); print('tkinter GUI OK')"
+
+      - name: Create minimal test
+        run: |
+          echo import tkinter as tk > minimal_test.py
+          echo import sys >> minimal_test.py
+          echo root = tk.Tk() >> minimal_test.py
+          echo root.withdraw() >> minimal_test.py
+          echo root.destroy() >> minimal_test.py
+          echo print('Minimal test passed') >> minimal_test.py
+
+      - name: Test run minimal
+        run: python minimal_test.py
+
+      - name: Build minimal
+        run: python -m PyInstaller --noconfirm --name minimal_test --onedir --console --hidden-import tkinter minimal_test.py
+
+      - name: Check minimal build
+        shell: pwsh
+        run: |
+          if (Test-Path "dist/minimal_test/minimal_test.exe") {
+            Write-Host "SUCCESS: Minimal build works!"
+            Get-ChildItem dist/minimal_test
+          } else {
+            Write-Host "FAILED: Minimal build failed"
+            if (Test-Path dist) { Get-ChildItem dist }
+            exit 1
+          }
