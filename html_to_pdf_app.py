@@ -690,6 +690,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Handle command line arguments for PyInstaller
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--help":
+        print("HTML-to-PDF Converter")
+        print("A cross-platform GUI app for converting HTML to PDF, DOCX, and PPTX.")
+        sys.exit(0)
     main()
 
 
