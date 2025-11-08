@@ -88,29 +88,30 @@ jobs:
         run: python -m playwright install chromium
 
       - name: Build main application
+        shell: pwsh
         run: |
-          echo "=== BUILDING MAIN APPLICATION ==="
-          echo "Python version: $(python --version)"
-          echo "Working directory: $(pwd)"
-          echo "Environment: $PATH"
+          Write-Host "=== BUILDING MAIN APPLICATION ===" -ForegroundColor Green
+          Write-Host "Python version: $(python --version)" -ForegroundColor Cyan
+          Write-Host "Working directory: $(pwd)" -ForegroundColor Cyan
+          Write-Host "Environment PATH length: $($env:PATH.Length)" -ForegroundColor Cyan
 
           python -m PyInstaller --noconfirm --name "HTML_to_PDF_Converter" --onedir --windowed --hidden-import customtkinter --hidden-import tkinter --hidden-import playwright --hidden-import playwright.sync_api --hidden-import PIL --hidden-import docx --hidden-import pptx html_to_pdf_app.py
 
-          echo "Build exit code: $?"
-          if [ $? -ne 0 ]; then
-            echo "=== BUILD FAILED - SHOWING LOGS ==="
-            if [ -f "HTML_to_PDF_Converter.spec" ]; then
-              echo "Spec file exists"
-              head -20 "HTML_to_PDF_Converter.spec"
-            fi
-            if [ -d "build" ]; then
-              echo "Build directory exists"
-              ls -la build/
-            fi
+          Write-Host "Build exit code: $LASTEXITCODE" -ForegroundColor Yellow
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "=== BUILD FAILED - SHOWING LOGS ===" -ForegroundColor Red
+            if (Test-Path "HTML_to_PDF_Converter.spec") {
+              Write-Host "Spec file exists" -ForegroundColor Yellow
+              Get-Content "HTML_to_PDF_Converter.spec" | Select-Object -First 20
+            }
+            if (Test-Path "build") {
+              Write-Host "Build directory exists" -ForegroundColor Yellow
+              Get-ChildItem build -Recurse | Select-Object -First 10
+            }
             exit 1
-          fi
+          }
 
-          echo "=== BUILD COMPLETED ==="
+          Write-Host "=== BUILD COMPLETED ===" -ForegroundColor Green
 
       - name: Check main build
         shell: pwsh
