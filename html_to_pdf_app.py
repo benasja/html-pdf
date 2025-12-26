@@ -599,7 +599,113 @@ class HtmlToPdfApp(ctk.CTk):
                     self.end_headers()
                     self.wfile.write(content)
                 elif path == "/content":
-                    data = app_ref._latest_html.encode("utf-8")
+                    html_content = app_ref._latest_html
+                    
+                    # Detect React/JSX code
+                    is_react = (
+                        "import React" in html_content or 
+                        "from 'react'" in html_content or 
+                        "from \"react\"" in html_content or
+                        "export default" in html_content or
+                        "useState" in html_content or
+                        "className=" in html_content
+                    )
+                    
+                    if is_react and not html_content.strip().startswith("<!doctype") and not html_content.strip().startswith("<html"):
+                        # Create lucide-react icon shim with proper SVG paths
+                        lucide_shim = """
+                        // Lucide React Icons Shim
+                        const createIcon = (paths) => ({ className = '', ...props }) => 
+                            React.createElement('svg', { 
+                                ...props, 
+                                className, 
+                                viewBox: '0 0 24 24', 
+                                fill: 'none', 
+                                stroke: 'currentColor', 
+                                strokeWidth: 2,
+                                strokeLinecap: 'round',
+                                strokeLinejoin: 'round'
+                            }, Array.isArray(paths) ? paths.map((d, i) => React.createElement('path', { key: i, d })) : React.createElement('path', { d: paths }));
+                        
+                        const BookOpen = createIcon('M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20');
+                        const Calculator = createIcon(['M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z', 'M8 6h8', 'M8 10h8', 'M8 14h.01', 'M12 14h.01', 'M16 14h.01', 'M8 18h.01', 'M12 18h.01', 'M16 18h.01']);
+                        const CheckCircle = createIcon(['M22 11.08V12a10 10 0 1 1-5.93-9.14', 'M22 4 12 14.01l-3-3']);
+                        const ChevronRight = createIcon('m9 18 6-6-6-6');
+                        const AlertTriangle = createIcon(['m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z', 'M12 9v4', 'M12 17h.01']);
+                        const Zap = createIcon('M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.32A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.32A1 1 0 0 0 11 14z');
+                        const Activity = createIcon(['M22 12h-4l-3 9L9 3l-3 9H2']);
+                        const Layers = createIcon(['m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z', 'm12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z', 'M12 22V12', 'M22 12.5v7.5', 'M2 12.5v7.5']);
+                        const Radio = createIcon(['M4.9 19.1C1 15.2 1 8.8 4.9 4.9', 'M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5', 'M12 12h.01', 'M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5', 'M19.1 4.9C23 8.8 23 15.1 19.1 19']);
+                        const ArrowRight = createIcon(['M5 12h14', 'M12 5l7 7-7 7']);
+                        """
+                        
+                        # Wrap React/JSX in full HTML template
+                        data = (
+                            "<!doctype html>\n"
+                            "<html><head><meta charset=\"utf-8\">"
+                            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+                            "<title>React Preview</title>"
+                            "<script crossorigin src=\"https://unpkg.com/react@18/umd/react.development.js\"></script>"
+                            "<script crossorigin src=\"https://unpkg.com/react-dom@18/umd/react-dom.development.js\"></script>"
+                            "<script src=\"https://unpkg.com/@babel/standalone/babel.min.js\"></script>"
+                            "<script src=\"https://cdn.tailwindcss.com\"></script>"
+                            "<script src=\"https://polyfill.io/v3/polyfill.min.js?features=es6\"></script>"
+                            "<script id=\"MathJax-script\" async src=\"https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js\"></script>"
+                            "<script>"
+                            "window.MathJax = {"
+                            "  tex: {"
+                            "    inlineMath: [['$','$'], ['\\\\(','\\\\)']],"
+                            "    displayMath: [['$$','$$'], ['\\\\[','\\\\]']]"
+                            "  }"
+                            "};"
+                            "</script>"
+                            "<style>"
+                            "body { margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }"
+                            "</style>"
+                            "</head><body>"
+                            "<div id=\"root\"></div>"
+                            "<script type=\"text/babel\">\n"
+                            + lucide_shim + "\n"
+                            + html_content + "\n"
+                            + """
+                            // Auto-render: find default export or named component
+                            const rootElement = document.getElementById('root');
+                            const root = ReactDOM.createRoot(rootElement);
+                            
+                            let ComponentToRender = null;
+                            if (typeof DetailedLesson2LT !== 'undefined') {
+                                ComponentToRender = DetailedLesson2LT;
+                            } else if (typeof App !== 'undefined') {
+                                ComponentToRender = App;
+                            } else {
+                                // Try to find any exported component
+                                const exports = Object.keys(window).filter(k => 
+                                    typeof window[k] === 'function' && 
+                                    k[0] === k[0].toUpperCase()
+                                );
+                                if (exports.length > 0) {
+                                    ComponentToRender = window[exports[0]];
+                                }
+                            }
+                            
+                            if (ComponentToRender) {
+                                root.render(React.createElement(ComponentToRender));
+                            } else {
+                                rootElement.innerHTML = '<div style="padding:20px;"><h2>React Component Not Found</h2><p>Make sure your component is exported as default or named export.</p></div>';
+                            }
+                            
+                            // Re-render MathJax after React renders
+                            setTimeout(() => {
+                                if (window.MathJax && window.MathJax.typesetPromise) {
+                                    window.MathJax.typesetPromise();
+                                }
+                            }, 500);
+                            </script>"
+                            "</body></html>"
+                        ).encode("utf-8")
+                    else:
+                        data = html_content.encode("utf-8")
+                    
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
                     self.send_header("Cache-Control", "no-store")
