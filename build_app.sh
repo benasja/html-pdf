@@ -23,5 +23,16 @@ pyinstaller \
   --hidden-import playwright.sync_api \
   html_to_pdf_app.py
 
-echo "\nBuilt app at: dist/HTML_to_PDF_Converter/HTML_to_PDF_Converter.app"
+echo "\nBuilt app at: dist/HTML_to_PDF_Converter.app"
+
+# Sign the app to avoid Gatekeeper warnings
+APP_PATH="dist/HTML_to_PDF_Converter.app"
+if [ -d "${APP_PATH}" ]; then
+    echo "Signing app to remove Gatekeeper warnings..."
+    xattr -cr "${APP_PATH}" 2>/dev/null || true
+    codesign --force --deep --sign - "${APP_PATH}" 2>/dev/null || {
+        echo "Warning: codesign failed, but app should still work..."
+    }
+    echo "✓ App signed successfully"
+fi
 
